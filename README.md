@@ -33,6 +33,8 @@ BEARER_TOKEN=your_bearer_token
 ```
 If you don't have them, please contact smonti@eurekalabs.io.
 
+To obtain the API Token, you need to register your email here: https://estadisticasbcra.com/api/registracion
+
 ## :computer: Usage
 
 You need to only run the script:
