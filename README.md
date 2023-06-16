@@ -1,10 +1,10 @@
-# :rocket: Project Name
+# :rocket: BCRA Indexes script
 
 CoderHouse project to pull BCRA information from this API https://estadisticasbcra.com/ and store it in a Database. In this case we use Amazon Redshift.
 
 ## :memo: Table of Contents
 
-- [:rocket: Project Name](#rocket-project-name)
+- [:rocket: BCRA Indexes script](#rocket-bcra-indexes-script)
   - [:memo: Table of Contents](#memo-table-of-contents)
   - [:package: Installation](#package-installation)
   - [:wrench: Configuration](#wrench-configuration)
