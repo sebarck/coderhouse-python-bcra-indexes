@@ -27,8 +27,6 @@ for entry in data:
     value = entry['v']
     historical_data[date] = value
 
-print(historical_data['2023-06-15'])
-
 # Create the Panda DataFrame with the dictionary data
 df = pd.DataFrame.from_dict(historical_data, orient='index', columns=['value'])
 
@@ -48,7 +46,7 @@ except Exception as e:
 # Create the Redshift table IF NOT EXISTS. If exists will success anyways, consider that
 try: 
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS uva_historical_values (date DATE PRIMARY KEY, value FLOAT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS uva_historical_values (date DATE PRIMARY KEY SORTKEY, value FLOAT)")
     print("Table created successfully or already exists.")
 except Exception as e:
     print("Error creating the database. Details: ", e)
