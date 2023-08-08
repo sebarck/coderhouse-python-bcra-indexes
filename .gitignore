@@ -1,2 +1,5 @@
 .env
 coderdesafio/
+logs/**
+.vscode
+dags/__pycache__
