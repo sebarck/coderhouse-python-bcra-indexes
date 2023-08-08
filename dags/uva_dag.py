@@ -1,5 +1,6 @@
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
+from airflow.operators.email_operator import EmailOperator
 from airflow.models import Variable
 from datetime import datetime, timedelta
 import requests
@@ -207,6 +208,24 @@ def store_blue_dollar_data(**kwargs):
         print("Closed connection. Bye!")
 
 
+def calculate_trending_change_and_send_email(**kwargs):
+    calculated_change = 10
+    threshold = Variable.get('ALERT_THRESHOLD')
+    # Send an email
+    if calculated_change > threshold:
+        email_subject = "Weekly Trending Change Alert"
+        email_body = f"Weekly trending change: {calculated_change:.2f}% exceeds the threshold of {threshold}%."
+
+        email_task = EmailOperator(
+            task_id='send_trending_change_email',
+            to=Variable.get('MAIL_TO'),
+            subject=email_subject,
+            html_content=email_body,
+            dag=dag,
+        )
+        email_task.execute(kwargs)
+
+
 # Task 1: Retrieve UVA data from API
 retrieve_uva_data_task = PythonOperator(
     task_id='retrieve_uva_data',
@@ -235,6 +254,16 @@ store_dollar_data_task = PythonOperator(
     dag=dag,
 )
 
+# Task 5: Calculate trending change and send email
+calculate_send_email_task = PythonOperator(
+    task_id='calculate_send_email',
+    python_callable=calculate_trending_change_and_send_email,
+    provide_context=True,
+    dag=dag,
+)
+
 # Define the task dependencies
 retrieve_uva_data_task >> store_uva_data_task
 retrieve_dollar_data_task >> store_dollar_data_task
+store_uva_data_task >> calculate_send_email_task
+store_dollar_data_task >> calculate_send_email_task
