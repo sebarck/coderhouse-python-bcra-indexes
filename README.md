@@ -12,12 +12,11 @@ CoderHouse project to pull BCRA information from this API https://estadisticasbc
 
 ## :package: Installation 
 
-1. Clone the repository
+1. Clone the repository.
 
-2. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
+2. Follow the Configuration section to create the required variable file with the required parameters for this app.
+
+3. Run the Docker compose with the command in "Usage" section.
 ## :wrench: Configuration
 
 To configure the application, create a .env file in the root directory and provide the following environment variables:
@@ -40,6 +39,6 @@ To obtain the API Token, you need to register your email here: https://estadisti
 You need to only run the script:
 
 ```bash
-python main.py
+docker compose up
 ```
 Follow the prompts to follow the different execution results and keep track of the errors if any
