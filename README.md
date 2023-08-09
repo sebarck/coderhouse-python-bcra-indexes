@@ -1,6 +1,10 @@
 # :rocket: BCRA Indexes script
 
-CoderHouse project to pull BCRA information from this API https://estadisticasbcra.com/ and store it in a Database. In this case we use Amazon Redshift.
+CoderHouse project to pull UVA index information from this API https://estadisticasbcra.com/ and the Argentina's Dollar Blue from here https://api.bluelytics.com.ar/v2/evolution.json and store them in a Database. 
+
+After that, the process will calculate the Daily and Weekly trending based on the latest pulled values and triggers an email if the configured threshold is reached.
+
+
 
 ## :memo: Table of Contents
 
@@ -12,11 +16,13 @@ CoderHouse project to pull BCRA information from this API https://estadisticasbc
 
 ## :package: Installation 
 
-1. Clone the repository.
+1. Install docker desktop on your machine.
+   
+2. Clone the repository.
 
-2. Follow the Configuration section to create the required variable file with the required parameters for this app.
+3. Follow the Configuration section to create the required variable file with the required parameters for this app.
 
-3. Run the Docker compose with the command in "Usage" section.
+4. Run the Docker compose with the command in "Usage" section and follow-up the instructions in there for triggering the tasks.
 ## :wrench: Configuration
 
 To configure the application, create a .env file in the root directory and provide the following environment variables:
@@ -37,7 +43,7 @@ AIRFLOW__SMTP__SMTP_PASSWORD=your_sendgrid_apikey
 AIRFLOW__SMTP__SMTP_PORT=587
 AIRFLOW__SMTP__SMTP_MAIL_FROM=your_from_email
 AIRFLOW_VAR_MAIL_TO=where_to_send_emails
-AIRFLOW_VAR_ALERT_THRESHOLD=your_desired_threshold_for_alerts
+AIRFLOW_VAR_TRENDING_THRESHOLD=your_desired_threshold_for_alerts
 ```
 If you don't have them, please contact smonti@eurekalabs.io.
 
@@ -45,11 +51,15 @@ To obtain the API Token, you need to register your email here: https://estadisti
 
 To configure the SendGrid API, please create a free account and setup it here: https://sendgrid.com/
 
+The threshold value is treated as a percentage.
+
 ## :computer: Usage
 
-You need to only run the script:
+At first you need to run the following command:
 
 ```bash
 docker compose up
 ```
-Follow the prompts to follow the different execution results and keep track of the errors if any
+1. After running that, enter to localhost:8080, using the default credentials for Airflow (airflow/airflow).
+2. Trigger the DAG "uva_historical_data_dag".
+3. Monitor the results using the Graph View.

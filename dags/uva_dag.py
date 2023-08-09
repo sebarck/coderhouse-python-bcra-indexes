@@ -218,95 +218,107 @@ def calculate_trending(**kwargs):
     )
 
     # Calculate the date range for the last 7 days
-    today = datetime.now().date()
-    last_8_days = today - timedelta(days=8)
+    current_date = datetime.now().date()
+    week_ago_date = current_date - timedelta(days=7)
 
     # Query the data from both tables within the date range
-    uva_query = f"SELECT * FROM uva_historical_values WHERE date >= '{last_8_days}' ORDER BY date ASC;"
-    dollar_query = f"SELECT * FROM dollar_historical_values WHERE date >= '{last_8_days}' AND source = 'Blue' ORDER BY date ASC;"
+    uva_query = f"SELECT * FROM uva_historical_values WHERE date >= '{week_ago_date}' ORDER BY date ASC;"
+    dollar_query = f"SELECT * FROM dollar_historical_values WHERE date >= '{week_ago_date}' AND source = 'Blue' ORDER BY date ASC;"
 
     uva_data = pd.read_sql_query(uva_query, conn)
     dollar_data = pd.read_sql_query(dollar_query, conn)
 
-    # Calculate daily and weekly trending based on current and previous values
-    uva_data['daily_trending'] = uva_data['value'] - uva_data['value'].shift(1)
-    uva_data['weekly_trending'] = uva_data['value'] - \
-        uva_data['value'].shift(7)
+    # Convert data dictionaries to DataFrames
+    uva_data_df = pd.DataFrame(uva_data)
+    dollar_data_df = pd.DataFrame(dollar_data)
 
-    dollar_data['daily_trending_sell'] = dollar_data['value_sell'] - \
-        dollar_data['value_sell'].shift(1)
-    dollar_data['weekly_trending_sell'] = dollar_data['value_sell'] - \
-        dollar_data['value_sell'].shift(7)
+    # Convert 'date' column to datetime
+    uva_data_df['date'] = pd.to_datetime(uva_data_df['date'])
+    dollar_data_df['date'] = pd.to_datetime(dollar_data_df['date'])
 
-    dollar_data['daily_trending_buy'] = dollar_data['value_buy'] - \
-        dollar_data['value_buy'].shift(1)
-    dollar_data['weekly_trending_buy'] = dollar_data['value_buy'] - \
-        dollar_data['value_buy'].shift(7)
+    # Calculate daily and weekly trending changes for UVA data
+    uva_current_data = uva_data_df[uva_data_df['date']
+                                   == pd.Timestamp(current_date)]
+    uva_previous_day_data = uva_data_df[uva_data_df['date'] == pd.Timestamp(
+        current_date - timedelta(days=1))]
+    uva_previous_week_data = uva_data_df[uva_data_df['date'] == pd.Timestamp(
+        week_ago_date)]
+
+    # Calculate the daily trending change in percentage for UVA data
+    uva_daily_trending_percentage = (
+        (uva_current_data['value'].values[0] - uva_previous_day_data['value'].values[0]) / uva_previous_day_data['value'].values[0]) * 100
+
+    # Calculate the weekly trending change in percentage for UVA data
+    uva_weekly_trending_percentage = (
+        (uva_current_data['value'].values[0] - uva_previous_week_data['value'].values[0]) / uva_previous_week_data['value'].values[0]) * 100
+
+    # Calculate daily and weekly trending changes for Dollar data (Sell and Buy)
+    dollar_current_data = dollar_data_df[dollar_data_df['date']
+                                         == pd.Timestamp(current_date)]
+    dollar_previous_day_data = dollar_data_df[dollar_data_df['date']
+                                              == pd.Timestamp(current_date - timedelta(days=1))]
+    dollar_previous_week_data = dollar_data_df[dollar_data_df['date']
+                                               == pd.Timestamp(week_ago_date)]
+
+    # Calculate the daily trending change in percentage for Dollar data (Sell)
+    dollar_daily_trending_sell_percentage = (
+        (dollar_current_data['value_sell'].values[0] - dollar_previous_day_data['value_sell'].values[0]) / dollar_previous_day_data['value_sell'].values[0]) * 100
+
+    # Calculate the weekly trending change in percentage for Dollar data (Sell)
+    dollar_weekly_trending_sell_percentage = (
+        (dollar_current_data['value_sell'].values[0] - dollar_previous_week_data['value_sell'].values[0]) / dollar_previous_week_data['value_sell'].values[0]) * 100
+
+    # Print the calculated daily and weekly trending changes
+    print("UVA Data:")
+    print("Daily Trending:", uva_daily_trending_percentage)
+    print("Weekly Trending:", uva_weekly_trending_percentage)
+
+    print("\nDollar Data (Sell):")
+    print("Daily Trending (Sell):", dollar_daily_trending_sell_percentage)
+    print("Weekly Trending (Sell):", dollar_weekly_trending_sell_percentage)
 
     # Close the connection
     conn.close()
 
-    return uva_data, dollar_data
+    return uva_daily_trending_percentage, uva_weekly_trending_percentage, dollar_daily_trending_sell_percentage, dollar_weekly_trending_sell_percentage
 
 
 def send_email(**kwargs):
-    # Retrieve the calculated trending data
-    uva_data, dollar_data = kwargs['ti'].xcom_pull(
-        task_ids='calculate_trending')
+    # Retrieve the calculated percentages from the previous task
+    task_instance = kwargs['ti']
+    (
+        uva_daily_percentage,
+        uva_weekly_percentage,
+        dollar_daily_percentage_sell,
+        dollar_weekly_percentage_sell
+    ) = task_instance.xcom_pull(task_ids='calculate_trending')
 
-    # Calculate the daily and weekly trending percentages
-    uva_daily_trending_percentage = (
-        uva_data['daily_trending'] / uva_data['value'].shift(1)) * 100
-    uva_weekly_trending_percentage = (
-        uva_data['weekly_trending'] / uva_data['value'].shift(7)) * 100
+    # Get the threshold percentage from the environment variable
+    threshold = float(Variable.get('TRENDING_THRESHOLD', 0.0))
 
-    # Calculate the daily and weekly trending percentages for Dollar data
-    dollar_daily_trending_sell_percentage = (
-        dollar_data['daily_trending_sell'] / dollar_data['value_sell'].shift(1)) * 100
-    dollar_weekly_trending_sell_percentage = (
-        dollar_data['weekly_trending_sell'] / dollar_data['value_sell'].shift(7)) * 100
+    # Check if any of the percentages exceed the threshold
+    if (uva_daily_percentage > threshold) or \
+       (uva_weekly_percentage > threshold) or \
+       (dollar_daily_percentage_sell > threshold) or \
+       (dollar_weekly_percentage_sell > threshold):
 
-    dollar_daily_trending_buy_percentage = (
-        dollar_data['daily_trending_buy'] / dollar_data['value_buy'].shift(1)) * 100
-    dollar_weekly_trending_buy_percentage = (
-        dollar_data['weekly_trending_buy'] / dollar_data['value_buy'].shift(7)) * 100
+        # Send an email alert
+        email_subject = "Trending Change Alert"
+        email_body = (
+            "<p style='font-size: 16px;'>"
+            "Some of the trending percentages have exceeded the threshold of "
+            f"<strong>{threshold:.2f}%</strong>.<br><br>"
+            "<strong>UVA Daily Trending:</strong> {:.2f}%<br>"
+            "<strong>UVA Weekly Trending:</strong> {:.2f}%<br>"
+            "<strong>Dollar Daily Trending (Sell):</strong> {:.2f}%<br>"
+            "<strong>Dollar Weekly Trending (Sell):</strong> {:.2f}%<br><br>"
+            "Please take appropriate action."
+            "</p>"
+        ).format(
+            uva_daily_percentage, uva_weekly_percentage,
+            dollar_daily_percentage_sell, dollar_weekly_percentage_sell
+        )
 
-    # Threshold for triggering email alert
-    threshold = float(Variable.get('ALERT_THRESHOLD'))
-
-    # Check if any of the calculated percentages exceed the threshold
-    exceed_threshold = (
-        (uva_daily_trending_percentage.abs() > threshold).any()
-        or (uva_weekly_trending_percentage.abs() > threshold).any()
-        or (dollar_daily_trending_sell_percentage.abs() > threshold).any()
-        or (dollar_weekly_trending_sell_percentage.abs() > threshold).any()
-        or (dollar_daily_trending_buy_percentage.abs() > threshold).any()
-        or (dollar_weekly_trending_buy_percentage.abs() > threshold).any()
-    )
-
-    # Prepare email content
-    email_subject = "Trending Change Alert"
-    email_body = "Trending Change Alert:\n\n"
-
-    if exceed_threshold:
-        email_body += "At least one trending change exceeds the threshold:\n"
-        email_body += "UVA Daily Trending: {:.2f}%\n".format(
-            uva_daily_trending_percentage.iloc[-1])
-        email_body += "UVA Weekly Trending: {:.2f}%\n".format(
-            uva_weekly_trending_percentage.iloc[-1])
-        email_body += "Dollar Daily Trending (Sell): {:.2f}%\n".format(
-            dollar_daily_trending_sell_percentage.iloc[-1])
-        email_body += "Dollar Weekly Trending (Sell): {:.2f}%\n".format(
-            dollar_weekly_trending_sell_percentage.iloc[-1])
-        email_body += "Dollar Daily Trending (Buy): {:.2f}%\n".format(
-            dollar_daily_trending_buy_percentage.iloc[-1])
-        email_body += "Dollar Weekly Trending (Buy): {:.2f}%\n".format(
-            dollar_weekly_trending_buy_percentage.iloc[-1])
-    else:
-        email_body += "No trending change exceeds the threshold."
-
-    # Send email if exceeding threshold
-    if exceed_threshold:
         email_task = EmailOperator(
             task_id='send_trending_change_email',
             to=Variable.get('MAIL_TO'),
