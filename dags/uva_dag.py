@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import requests
 import pandas as pd
 import psycopg2
-import os
 from dotenv import load_dotenv
 
 # Load environment variables from the .env file
@@ -208,14 +207,106 @@ def store_blue_dollar_data(**kwargs):
         print("Closed connection. Bye!")
 
 
-def calculate_trending_change_and_send_email(**kwargs):
-    calculated_change = 10
-    threshold = Variable.get('ALERT_THRESHOLD')
-    # Send an email
-    if calculated_change > threshold:
-        email_subject = "Weekly Trending Change Alert"
-        email_body = f"Weekly trending change: {calculated_change:.2f}% exceeds the threshold of {threshold}%."
+def calculate_trending(**kwargs):
+    conn = psycopg2.connect(
+        host=Variable.get('REDSHIFT_HOST'),
+        port=Variable.get('REDSHIFT_PORT'),
+        dbname=Variable.get('REDSHIFT_DBNAME'),
+        user=Variable.get('REDSHIFT_USER'),
+        password=Variable.get('REDSHIFT_PASSWORD'),
+        options=Variable.get('OPTIONS', '')
+    )
 
+    # Calculate the date range for the last 7 days
+    today = datetime.now().date()
+    last_8_days = today - timedelta(days=8)
+
+    # Query the data from both tables within the date range
+    uva_query = f"SELECT * FROM uva_historical_values WHERE date >= '{last_8_days}' ORDER BY date ASC;"
+    dollar_query = f"SELECT * FROM dollar_historical_values WHERE date >= '{last_8_days}' AND source = 'Blue' ORDER BY date ASC;"
+
+    uva_data = pd.read_sql_query(uva_query, conn)
+    dollar_data = pd.read_sql_query(dollar_query, conn)
+
+    # Calculate daily and weekly trending based on current and previous values
+    uva_data['daily_trending'] = uva_data['value'] - uva_data['value'].shift(1)
+    uva_data['weekly_trending'] = uva_data['value'] - \
+        uva_data['value'].shift(7)
+
+    dollar_data['daily_trending_sell'] = dollar_data['value_sell'] - \
+        dollar_data['value_sell'].shift(1)
+    dollar_data['weekly_trending_sell'] = dollar_data['value_sell'] - \
+        dollar_data['value_sell'].shift(7)
+
+    dollar_data['daily_trending_buy'] = dollar_data['value_buy'] - \
+        dollar_data['value_buy'].shift(1)
+    dollar_data['weekly_trending_buy'] = dollar_data['value_buy'] - \
+        dollar_data['value_buy'].shift(7)
+
+    # Close the connection
+    conn.close()
+
+    return uva_data, dollar_data
+
+
+def send_email(**kwargs):
+    # Retrieve the calculated trending data
+    uva_data, dollar_data = kwargs['ti'].xcom_pull(
+        task_ids='calculate_trending')
+
+    # Calculate the daily and weekly trending percentages
+    uva_daily_trending_percentage = (
+        uva_data['daily_trending'] / uva_data['value'].shift(1)) * 100
+    uva_weekly_trending_percentage = (
+        uva_data['weekly_trending'] / uva_data['value'].shift(7)) * 100
+
+    # Calculate the daily and weekly trending percentages for Dollar data
+    dollar_daily_trending_sell_percentage = (
+        dollar_data['daily_trending_sell'] / dollar_data['value_sell'].shift(1)) * 100
+    dollar_weekly_trending_sell_percentage = (
+        dollar_data['weekly_trending_sell'] / dollar_data['value_sell'].shift(7)) * 100
+
+    dollar_daily_trending_buy_percentage = (
+        dollar_data['daily_trending_buy'] / dollar_data['value_buy'].shift(1)) * 100
+    dollar_weekly_trending_buy_percentage = (
+        dollar_data['weekly_trending_buy'] / dollar_data['value_buy'].shift(7)) * 100
+
+    # Threshold for triggering email alert
+    threshold = float(Variable.get('ALERT_THRESHOLD'))
+
+    # Check if any of the calculated percentages exceed the threshold
+    exceed_threshold = (
+        (uva_daily_trending_percentage.abs() > threshold).any()
+        or (uva_weekly_trending_percentage.abs() > threshold).any()
+        or (dollar_daily_trending_sell_percentage.abs() > threshold).any()
+        or (dollar_weekly_trending_sell_percentage.abs() > threshold).any()
+        or (dollar_daily_trending_buy_percentage.abs() > threshold).any()
+        or (dollar_weekly_trending_buy_percentage.abs() > threshold).any()
+    )
+
+    # Prepare email content
+    email_subject = "Trending Change Alert"
+    email_body = "Trending Change Alert:\n\n"
+
+    if exceed_threshold:
+        email_body += "At least one trending change exceeds the threshold:\n"
+        email_body += "UVA Daily Trending: {:.2f}%\n".format(
+            uva_daily_trending_percentage.iloc[-1])
+        email_body += "UVA Weekly Trending: {:.2f}%\n".format(
+            uva_weekly_trending_percentage.iloc[-1])
+        email_body += "Dollar Daily Trending (Sell): {:.2f}%\n".format(
+            dollar_daily_trending_sell_percentage.iloc[-1])
+        email_body += "Dollar Weekly Trending (Sell): {:.2f}%\n".format(
+            dollar_weekly_trending_sell_percentage.iloc[-1])
+        email_body += "Dollar Daily Trending (Buy): {:.2f}%\n".format(
+            dollar_daily_trending_buy_percentage.iloc[-1])
+        email_body += "Dollar Weekly Trending (Buy): {:.2f}%\n".format(
+            dollar_weekly_trending_buy_percentage.iloc[-1])
+    else:
+        email_body += "No trending change exceeds the threshold."
+
+    # Send email if exceeding threshold
+    if exceed_threshold:
         email_task = EmailOperator(
             task_id='send_trending_change_email',
             to=Variable.get('MAIL_TO'),
@@ -254,16 +345,26 @@ store_dollar_data_task = PythonOperator(
     dag=dag,
 )
 
-# Task 5: Calculate trending change and send email
-calculate_send_email_task = PythonOperator(
-    task_id='calculate_send_email',
-    python_callable=calculate_trending_change_and_send_email,
+# Task 5: Calculate trending for UVA and Dollar data
+calculate_trending_task = PythonOperator(
+    task_id='calculate_trending',
+    python_callable=calculate_trending,
     provide_context=True,
     dag=dag,
 )
 
+# Task 6: Evaluate threshold and send email
+send_email_task = PythonOperator(
+    task_id='send_email',
+    python_callable=send_email,
+    provide_context=True,
+    dag=dag,
+)
+
+
 # Define the task dependencies
 retrieve_uva_data_task >> store_uva_data_task
 retrieve_dollar_data_task >> store_dollar_data_task
-store_uva_data_task >> calculate_send_email_task
-store_dollar_data_task >> calculate_send_email_task
+store_uva_data_task >> calculate_trending_task
+store_dollar_data_task >> calculate_trending_task
+calculate_trending_task >> send_email_task
