@@ -25,8 +25,8 @@ default_args = {
 
 # Define the DAG
 dag = DAG(
-    'uva_historical_data_dag',
-    description='DAG to retrieve UVA index historical data and store it in Redshift',
+    'uva_blue_dollar_dag',
+    description='DAG to retrieve UVA index and Blue dollar historical data and store it in Redshift. Also triggers a mail when a Daily or Weekly trending exceeds a configured threshold',
     schedule_interval=timedelta(days=1),
     default_args=default_args,
 )
